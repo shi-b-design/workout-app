@@ -1,5 +1,7 @@
+// Import the Supabase client that's configured for your application
 import supabase from './supabaseClient'
 
+// Function to get the current user's role
 export async function getUserRole() {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) return null
