@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import supabase from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { getUserRole } from "@/lib/auth";
+import Link from "next/link";
 
 // Define the shape of a workout object
 type Workout = {
@@ -164,6 +165,7 @@ export default function Dashboard() {
             <span className="px-3 py-1 bg-indigo-600 text-white rounded-full text-xs font-semibold">
               Admin
             </span>
+            
           )}
         </div>
 
@@ -172,6 +174,11 @@ export default function Dashboard() {
           <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded">
             <h2 className="font-bold mb-2 text-yellow-800">
               Admin Only: All Users
+                <Link
+                  href="/average"
+                  className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                  平均ワークアウト数を見る
+                </Link>
             </h2>
             <ul className="list-disc pl-5">
               {users.map((user) => (
