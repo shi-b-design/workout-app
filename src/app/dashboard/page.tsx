@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { getUserRole } from "@/lib/auth";
 import Link from "next/link";
 
-//hello
+
 // Define the shape of a workout object
 type Workout = {
   id: string;
