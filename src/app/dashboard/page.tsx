@@ -397,14 +397,20 @@ export default function Dashboard() {
                   type="number"
                   value={newWorkout.sets}
                   onChange={(e) => {
-                    const value = parseInt(e.target.value);
+                    let stringValue = e.target.value;
+                    // Remove leading zeros unless the value is just '0'
+                    if (stringValue !== "0") {
+                      stringValue = stringValue.replace(/^0+/, "");
+                    }
+                    const numValue = parseInt(stringValue);
                     setNewWorkout({
                       ...newWorkout,
-                      sets: isNaN(value) ? 0 : value,
+                      sets: isNaN(numValue) ? 0 : numValue,
                     });
                   }}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
                   required
+                  min="0"
                 />
               </div>
             </div>
