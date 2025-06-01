@@ -36,18 +36,21 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    checkUser();
-    fetchRoleAndWorkouts();
-  }, [checkUser]);
+    // Move session check directly into useEffect
+    const checkSession = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        router.push("/login");
+      } else {
+        // Only fetch data if session exists
+        fetchRoleAndWorkouts();
+      }
+    };
 
-  async function checkUser() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
-      router.push("/login");
-    }
-  }
+    checkSession();
+  }, []); // Empty dependency array to run only on mount
 
   async function fetchRoleAndWorkouts() {
     setLoading(true);
