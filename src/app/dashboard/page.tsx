@@ -25,6 +25,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true); // Loading state
   const [role, setRole] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]); // New state for all users
+  const [plan, setPlan] = useState<string | null>(null); // State for user's plan
   const [newWorkout, setNewWorkout] = useState({
     // From state for new workout
     date: new Date().toISOString().split("T")[0], // Today's date
@@ -50,18 +51,41 @@ export default function Dashboard() {
 
   async function fetchRoleAndWorkouts() {
     setLoading(true);
-    // Get user role
-    const userRole = await getUserRole();
-    setRole(userRole);
-    // Get session
+    setError(null); // Clear previous errors
+
     const {
       data: { session },
     } = await supabase.auth.getSession();
+
     if (!session) {
       setWorkouts([]);
+      setUsers([]);
+      setRole(null);
+      setPlan(null);
       setLoading(false);
       return;
     }
+
+    // Get user role
+    const userRole = await getUserRole();
+    setRole(userRole);
+
+    // Fetch user's plan from the public.users table
+    const { data: userPlanData, error: userPlanError } = await supabase
+      .from("users")
+      .select("plan")
+      .eq("id", session.user.id)
+      .single();
+
+    if (!userPlanError && userPlanData) {
+      setPlan(userPlanData.plan);
+      console.log("Fetched and set plan:", userPlanData.plan); // Log fetched plan
+    } else {
+      console.error("Error fetching user plan:", userPlanError);
+      setPlan("free"); // Default to free if error
+      console.log("Error fetching plan, defaulted to free."); // Log default
+    }
+
     // Fetch all workouts if admin, else only own
     let data: Workout[] = [];
     let fetchError = null;
@@ -72,8 +96,10 @@ export default function Dashboard() {
         .order("date", { ascending: false });
       data = result.data || [];
       fetchError = result.error;
-      // Fetch all users for admin
-      const usersResult = await supabase.from("users").select("id, email");
+      // Fetch all users for admin (including plan if needed for admin view)
+      const usersResult = await supabase
+        .from("users")
+        .select("id, email, plan");
       setUsers(usersResult.data || []);
     } else {
       const result = await supabase
@@ -85,19 +111,22 @@ export default function Dashboard() {
       fetchError = result.error;
       setUsers([]); // Not admin, so clear users
     }
+
     if (fetchError) {
       setWorkouts([]);
       setError(fetchError.message);
     } else {
       setWorkouts(data);
-      setError(null);
+      setError(null); // Clear workout fetch specific error
     }
+
     setLoading(false);
   }
 
   // Handle form submission for new workout
   async function handleAddWorkout(e: React.FormEvent) {
     e.preventDefault();
+    setError(null); // Clear previous errors from form submission
     try {
       // Get the current authenticated user session
       const {
@@ -107,9 +136,35 @@ export default function Dashboard() {
 
       if (sessionError) throw sessionError;
       if (!session) {
-        // If no session, redirect to login (should be caught by checkUser, but good to be safe)
         router.push("/login");
         return;
+      }
+
+      console.log("Current plan before check in handleAddWorkout:", plan); // Log plan before check
+
+      // Check plan limits for free users
+      if (plan === "free") {
+        const today = new Date().toISOString().split("T")[0];
+        const { count, error: countError } = await supabase
+          .from("workouts")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", session.user.id)
+          .eq("date", today);
+
+        if (countError) {
+          throw countError;
+        }
+
+        console.log(`Today\'s workout count for free user: ${count}`); // Log daily count
+
+        const dailyLimit = 5;
+        if (count !== null && count >= dailyLimit) {
+          // Set a specific error state for the limit
+          setError(
+            `無料プランでは1日${dailyLimit}件までしかワークアウトを追加できません。`
+          );
+          return; // Stop here if limit reached
+        }
       }
 
       // Add the user_id to the new workout object
@@ -130,13 +185,103 @@ export default function Dashboard() {
         sets: 0,
       });
 
-      // Refresh workouts list
+      // Refresh workouts list (this will also re-fetch the plan implicitly if needed, but plan state should be up-to-date)
       fetchRoleAndWorkouts();
     } catch (error: unknown) {
       if (error instanceof Error) {
         setError(error.message);
       } else {
         setError(String(error));
+      }
+    }
+  }
+
+  // Function to handle upgrade button click
+  async function handleUpgradeClick() {
+    try {
+      // Get the current authenticated user session to get the user ID
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) throw sessionError;
+      if (!session) {
+        // If no session, redirect to login (should not happen if checkUser works, but good practice)
+        router.push("/login");
+        return;
+      }
+
+      // Call your API route to create a Stripe Checkout session
+      const response = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId: session.user.id }), // Send the user's ID
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.url) {
+        // Redirect the user to the Stripe Checkout page
+        window.location.assign(data.url);
+      } else {
+        // Handle API errors
+        throw new Error(data.error || "Failed to create checkout session");
+      }
+    } catch (error: unknown) {
+      // Display any errors during the process
+      if (error instanceof Error) {
+        setError(
+          `アップグレード処理中にエラーが発生しました: ${error.message}`
+        );
+      } else {
+        setError(
+          `アップグレード処理中にエラーが発生しました: ${String(error)}`
+        );
+      }
+    }
+  }
+
+  // Function to handle removing a workout
+  async function handleRemoveWorkout(workoutId: string) {
+    try {
+      // Get the current authenticated user session
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) throw sessionError;
+      if (!session) {
+        // If no session, redirect to login
+        router.push("/login");
+        return;
+      }
+
+      // Delete the workout from the database
+      // Ensure only the owner can delete their workout (using RLS or backend check)
+      // For simplicity here, we rely on RLS if set up, or assume frontend user matches workout user_id
+      const { error } = await supabase
+        .from("workouts")
+        .delete()
+        .eq("id", workoutId);
+      // Consider adding .eq('user_id', session.user.id) for extra security if RLS is not strict enough
+
+      if (error) throw error;
+
+      // Refresh workouts list after deletion
+      fetchRoleAndWorkouts();
+    } catch (error: unknown) {
+      if (error instanceof Error) {
+        setError(
+          `ワークアウトの削除中にエラーが発生しました: ${error.message}`
+        );
+      } else {
+        setError(
+          `ワークアウトの削除中にエラーが発生しました: ${String(error)}`
+        );
       }
     }
   }
@@ -155,8 +300,21 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
         {error && (
-          <div className="mb-4 p-2 bg-red-100 text-red-700 rounded">
+          <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">
             {error}
+            {/* Add upgrade link/button here if the error is the limit message */}
+            {error.startsWith("無料プランでは") && (
+              <p className="mt-2 text-red-800 font-semibold">
+                プレミアムプランにアップグレードして無制限にワークアウトを追加！
+                {/* Add the upgrade button that calls the API */}
+                <button
+                  className="ml-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  onClick={handleUpgradeClick} // This function will call the API
+                >
+                  アップグレードする
+                </button>
+              </p>
+            )}
           </div>
         )}
         <div className="flex items-center gap-4 mb-8">
@@ -165,7 +323,6 @@ export default function Dashboard() {
             <span className="px-3 py-1 bg-indigo-600 text-white rounded-full text-xs font-semibold">
               Admin
             </span>
-            
           )}
         </div>
 
@@ -174,11 +331,12 @@ export default function Dashboard() {
           <div className="mb-8 p-4 bg-yellow-50 border border-yellow-200 rounded">
             <h2 className="font-bold mb-2 text-yellow-800">
               Admin Only: All Users
-                <Link
-                  href="/average"
-                  className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                  平均ワークアウト数を見る
-                </Link>
+              <Link
+                href="/average"
+                className="ml-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                平均ワークアウト数を見る
+              </Link>
             </h2>
             <ul className="list-disc pl-5">
               {users.map((user) => (
@@ -300,10 +458,23 @@ export default function Dashboard() {
                       </td>
                       {role === "admin" && (
                         <>
-                          <td>{workout.user_id}</td>
-                          <td>{user ? user.email : "Unknown"}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {workout.user_id}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {user ? user.email : "Unknown"}
+                          </td>
                         </>
                       )}
+                      {/* Add Remove Button Column */}
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                        <button
+                          onClick={() => handleRemoveWorkout(workout.id)} // Call handler with workout ID
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Remove
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
