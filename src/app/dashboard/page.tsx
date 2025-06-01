@@ -38,7 +38,7 @@ export default function Dashboard() {
   useEffect(() => {
     checkUser();
     fetchRoleAndWorkouts();
-  }, []);
+  }, [checkUser]);
 
   async function checkUser() {
     const {

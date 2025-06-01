@@ -10,7 +10,7 @@ const supabaseAdmin = createClient(
 );
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2024-04-10',
+  apiVersion: '2025-05-28.basil',
 });
 
 export async function POST(req: Request) {
@@ -26,15 +26,16 @@ export async function POST(req: Request) {
     // Read the request body as text first for signature verification
     const reqBody = await req.text();
     event = stripe.webhooks.constructEvent(reqBody, signature, webhookSecret);
-  } catch (err: any) {
-    console.error(`Webhook signature verification failed. ${err.message}`);
-    return new NextResponse(`Webhook Error: ${err.message}`, { status: 400 });
+  } catch (err: unknown) {
+    console.error(`Webhook signature verification failed. ${err instanceof Error ? err.message : String(err)}`);
+    return new NextResponse(`Webhook Error: ${err instanceof Error ? err.message : String(err)}`, { status: 400 });
   }
 
   // Handle the event
   switch (event.type) {
     case 'checkout.session.completed':
-      const session = event.data.object as Stripe.CheckoutSession;
+      // Access session data more dynamically to avoid strict type mismatch with unusual API version
+      const session = event.data.object as { client_reference_id?: string }; // Cast to a minimal expected type or `any`
 
       // Extract user ID from client_reference_id
       const userId = session.client_reference_id;
