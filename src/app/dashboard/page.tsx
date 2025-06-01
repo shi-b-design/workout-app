@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { getUserRole } from "@/lib/auth";
 import Link from "next/link";
 
-
 // Define the shape of a workout object
 type Workout = {
   id: string;
@@ -51,7 +50,7 @@ export default function Dashboard() {
     };
 
     checkSession();
-  }, []); // Empty dependency array to run only on mount
+  }, [router]); // Empty dependency array to run only on mount
 
   async function fetchRoleAndWorkouts() {
     setLoading(true);
